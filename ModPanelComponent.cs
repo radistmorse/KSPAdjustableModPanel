@@ -57,7 +57,6 @@ namespace AdjustableModPanel {
         var button = mod.listItem.GetComponent<KSP.UI.Screens.ApplicationLauncherButton> ();
         if (AdjustableModPanel.Instance.IsAppButton (button)) {
           myButton = mod;
-          continue;
         }
         var texture = (Texture2D) button.sprite.texture;
         var func = button.onTrue.GetInvocationList ()[1];

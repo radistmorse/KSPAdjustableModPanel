@@ -58,6 +58,7 @@ namespace AdjustableModPanel {
       public ApplicationLauncher.AppScenes defaultModScenes;
       public string currentModKey;
       public ApplicationLauncher.AppScenes toggleModScenes;
+      public ApplicationLauncher.AppScenes AlwaysOn = ApplicationLauncher.AppScenes.NEVER;
     }
 
     private void OpenMainWindow () {
@@ -269,30 +270,49 @@ namespace AdjustableModPanel {
           togglecomp.graphic = image;
           image.sprite = skin.toggle.active.background;
           image.type = UnityEngine.UI.Image.Type.Sliced;
+          // parameters
+          var parameters = toggle.AddComponent<ToggleParameters> ();
+          parameters.defaultModScenes = mod.Value.Key;
+          parameters.currentModKey = mod.Key;
+          parameters.toggleModScenes = scene.Key;
+          if (mod.Value.Value.Equals (appButtonTexture)) {
+            // never allow to fully disable this mod
+            parameters.AlwaysOn = ApplicationLauncher.AppScenes.SPACECENTER;
+          }
           // checkbox state
           bool enabled = (mod.Value.Key & scene.Key) != ApplicationLauncher.AppScenes.NEVER;
-          bool visible = (modMatrix[mod.Key] & scene.Key) != ApplicationLauncher.AppScenes.NEVER;
+          bool visible = (modMatrix[mod.Key] & (scene.Key & (~parameters.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER;
           togglecomp.interactable = enabled;
           togglecomp.isOn = enabled & visible;
           if (!enabled) {
             togglecomp.GetComponent<UnityEngine.UI.Image> ().color = new Color (0f, 0f, 0f, 0.25f);
           }
-          var parameters = toggle.AddComponent<ToggleParameters> ();
-          parameters.defaultModScenes = mod.Value.Key;
-          parameters.currentModKey = mod.Key;
-          parameters.toggleModScenes = scene.Key;
-          // checkbox callback
-          togglecomp.onValueChanged.AddListener ((value) => {
-            if (value != ((modMatrix[mod.Key] & scene.Key) != ApplicationLauncher.AppScenes.NEVER)) {
-              if (value) {
-                modMatrix[mod.Key] = modMatrix[mod.Key] | (scene.Key & mod.Value.Key);
-              } else {
-                modMatrix[mod.Key] = modMatrix[mod.Key] & (~scene.Key);
+          // special case for "always on"
+          if (parameters.AlwaysOn == parameters.toggleModScenes) {
+            image.color = Color.gray;
+            togglecomp.isOn = true;
+            // just keep it always on
+            togglecomp.onValueChanged.AddListener ((value) => {
+              if (!value) {
+                togglecomp.isOn = true;
               }
-              forceUpdateCount += 1;
-              UpdateToggles ();
-            }
-          });
+            });
+          } else {
+            // checkbox callback
+            togglecomp.onValueChanged.AddListener ((value) => {
+              if (value != ((modMatrix[parameters.currentModKey] & (parameters.toggleModScenes & (~parameters.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER)) {
+                if (value) {
+                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] | (parameters.toggleModScenes & parameters.defaultModScenes);
+                } else {
+                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] & (~parameters.toggleModScenes);
+                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] | parameters.AlwaysOn;
+                }
+                Debug.Log ("[Adjustable Mod Panel] New value for " + parameters.currentModKey + ": " + modMatrix[parameters.currentModKey]);
+                forceUpdateCount += 1;
+                UpdateToggles ();
+              }
+            });
+          }
           var navigation = togglecomp.navigation;
           navigation.mode = UnityEngine.UI.Navigation.Mode.None;
           togglecomp.navigation = navigation;
@@ -328,8 +348,12 @@ namespace AdjustableModPanel {
     private void UpdateToggles () {
       foreach (var toggle in mainWindow.GetComponentsInChildren<UnityEngine.UI.Toggle> (true)) {
         var pars = toggle.GetComponent<ToggleParameters> ();
-        if (toggle.isOn != ((modMatrix[pars.currentModKey] & pars.toggleModScenes) != ApplicationLauncher.AppScenes.NEVER)) {
-          toggle.isOn = ((modMatrix[pars.currentModKey] & pars.toggleModScenes) != ApplicationLauncher.AppScenes.NEVER);
+        if (pars.toggleModScenes == pars.AlwaysOn) {
+          toggle.isOn = true;
+          continue;
+        }
+        if (toggle.isOn != ((modMatrix[pars.currentModKey] & (pars.toggleModScenes & (~pars.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER)) {
+          toggle.isOn = ((modMatrix[pars.currentModKey] & (pars.toggleModScenes & (~pars.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER);
         }
       }
     }
@@ -461,13 +485,11 @@ namespace AdjustableModPanel {
     }
 
     public void AppButtonDisable () {
-      if (appButton != null && appButton.toggleButton.Interactable)
-        appButton.Disable (false);
+      CloseMainWindow ();
     }
 
     public void AppButtonEnable () {
-      if (appButton != null && appButton.toggleButton.Interactable == false)
-        appButton.Enable (false);
+      // not needed, really
     }
 
     internal ApplicationLauncher.AppScenes GetModScenes (string descriptor) {
