@@ -486,7 +486,7 @@ namespace AdjustableModPanel {
     }
 
     public void AppButtonDisable () {
-      CloseMainWindow ();
+      appButton?.SetFalse ();
     }
 
     public void AppButtonEnable () {
@@ -518,7 +518,7 @@ namespace AdjustableModPanel {
 
     internal void RecordMod (string descriptor, ApplicationLauncher.AppScenes visibleInScenes, ApplicationLauncher.AppScenes alwaysOn,Texture2D texture) {
       if (!modList.ContainsKey (descriptor)) {
-        Debug.Log ("[Adjustable Mod Panel] Recorded a new mod: " + descriptor);
+        Debug.Log ("[Adjustable Mod Panel] Recorded a new mod: " + descriptor.Split ('+')[0]);
         modList[descriptor] = new KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> (visibleInScenes, texture);
       } else {
         // update the value in case the visibility was expanded by the mod
@@ -526,8 +526,11 @@ namespace AdjustableModPanel {
       }
       if (!modMatrix.ContainsKey (descriptor))
         modMatrix[descriptor] = visibleInScenes;
-
-      modMatrixAlwaysOn[descriptor] = alwaysOn;
+      if (!modMatrixAlwaysOn.ContainsKey (descriptor)) {
+        if (alwaysOn != ApplicationLauncher.AppScenes.NEVER)
+          Debug.Log ("[Adjustable Mod Panel]  Mod " + descriptor.Split('+')[0] + " requests to be unswitchable in scenes: " + alwaysOn);
+        modMatrixAlwaysOn[descriptor] = alwaysOn;
+      }
     }
 
     #region Config

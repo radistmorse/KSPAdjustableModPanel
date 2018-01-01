@@ -40,7 +40,7 @@ namespace AdjustableModPanel {
 
       if (modlist == null) {
         // no modlist, nothing to do
-        Debug.Log ("[Adjustable Mod Panel] No mod panel found, exiting now.");
+        Debug.Log ("[Adjustable Mod Panel] ERROR: No mod panel found, exiting now.");
         Destroy (this);
       }
     }
@@ -69,7 +69,6 @@ namespace AdjustableModPanel {
         KSP.UI.Screens.ApplicationLauncher.AppScenes alwaysOn = KSP.UI.Screens.ApplicationLauncher.AppScenes.NEVER;
 
         if (button.container.Data is KSP.UI.Screens.ApplicationLauncher.AppScenes) {
-          Debug.Log ("[Adjustable Mod Panel]  Mod " + module + " requests to be unswitchable in scenes: " + button.container.Data);
           alwaysOn = (KSP.UI.Screens.ApplicationLauncher.AppScenes)button.container.Data;
         }
 
