@@ -33,6 +33,7 @@ namespace AdjustableModPanel {
   [KSPAddon (KSPAddon.Startup.MainMenu, true)]
   public class AdjustableModPanel : MonoBehaviour {
     private Dictionary<string, ApplicationLauncher.AppScenes> modMatrix = new Dictionary<string, ApplicationLauncher.AppScenes> ();
+    private Dictionary<string, ApplicationLauncher.AppScenes> modMatrixAlwaysOn = new Dictionary<string, ApplicationLauncher.AppScenes> ();
     private Dictionary<string, KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> > modList = new Dictionary<string, KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> > ();
     private ApplicationLauncherButton appButton = null;
     private Texture2D appButtonTexture;
@@ -275,10 +276,7 @@ namespace AdjustableModPanel {
           parameters.defaultModScenes = mod.Value.Key;
           parameters.currentModKey = mod.Key;
           parameters.toggleModScenes = scene.Key;
-          if (mod.Value.Value.Equals (appButtonTexture)) {
-            // never allow to fully disable this mod
-            parameters.AlwaysOn = ApplicationLauncher.AppScenes.SPACECENTER;
-          }
+          parameters.AlwaysOn = modMatrixAlwaysOn[mod.Key];
           // checkbox state
           bool enabled = (mod.Value.Key & scene.Key) != ApplicationLauncher.AppScenes.NEVER;
           bool visible = (modMatrix[mod.Key] & (scene.Key & (~parameters.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER;
@@ -288,7 +286,7 @@ namespace AdjustableModPanel {
             togglecomp.GetComponent<UnityEngine.UI.Image> ().color = new Color (0f, 0f, 0f, 0.25f);
           }
           // special case for "always on"
-          if (parameters.AlwaysOn == parameters.toggleModScenes) {
+          if ((parameters.toggleModScenes & (~parameters.AlwaysOn)) == ApplicationLauncher.AppScenes.NEVER) {
             image.color = Color.gray;
             togglecomp.isOn = true;
             // just keep it always on
@@ -474,9 +472,12 @@ namespace AdjustableModPanel {
     public void OnGUIApplicationLauncherReady () {
       ApplicationLauncher.Instance.prefab_verticalTopDown.GetGameObject ().AddOrGetComponent<ModPanelComponent> ();
       ApplicationLauncher.Instance.prefab_horizontalRightLeft.GetGameObject ().AddOrGetComponent<ModPanelComponent> ();
-      if (ApplicationLauncher.Ready && appButton == null)
+      if (ApplicationLauncher.Ready && appButton == null) {
         appButton = ApplicationLauncher.Instance.AddModApplication (OpenMainWindow, CloseMainWindow, null, null,
           AppButtonEnable, AppButtonDisable, ApplicationLauncher.AppScenes.ALWAYS & (~ApplicationLauncher.AppScenes.MAINMENU), appButtonTexture);
+        // this mod should be always on in KSC
+        appButton.container.Data = ApplicationLauncher.AppScenes.SPACECENTER;
+      }
       forceUpdateCount += 3;
     }
 
@@ -515,7 +516,7 @@ namespace AdjustableModPanel {
       }
     }
 
-    internal void RecordMod (string descriptor, ApplicationLauncher.AppScenes visibleInScenes, Texture2D texture) {
+    internal void RecordMod (string descriptor, ApplicationLauncher.AppScenes visibleInScenes, ApplicationLauncher.AppScenes alwaysOn,Texture2D texture) {
       if (!modList.ContainsKey (descriptor)) {
         Debug.Log ("[Adjustable Mod Panel] Recorded a new mod: " + descriptor);
         modList[descriptor] = new KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> (visibleInScenes, texture);
@@ -525,6 +526,8 @@ namespace AdjustableModPanel {
       }
       if (!modMatrix.ContainsKey (descriptor))
         modMatrix[descriptor] = visibleInScenes;
+
+      modMatrixAlwaysOn[descriptor] = alwaysOn;
     }
 
     #region Config

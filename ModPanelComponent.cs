@@ -65,7 +65,15 @@ namespace AdjustableModPanel {
         if (module.EndsWith (".dll"))
           module = module.Substring (0, module.Length - 4);
         var descriptor = module + "+" + method;
-        AdjustableModPanel.Instance.RecordMod (descriptor, button.VisibleInScenes, texture);
+
+        KSP.UI.Screens.ApplicationLauncher.AppScenes alwaysOn = KSP.UI.Screens.ApplicationLauncher.AppScenes.NEVER;
+
+        if (button.container.Data is KSP.UI.Screens.ApplicationLauncher.AppScenes) {
+          Debug.Log ("[Adjustable Mod Panel]  Mod " + module + " requests to be unswitchable in scenes: " + button.container.Data);
+          alwaysOn = (KSP.UI.Screens.ApplicationLauncher.AppScenes)button.container.Data;
+        }
+
+        AdjustableModPanel.Instance.RecordMod (descriptor, button.VisibleInScenes, alwaysOn, texture);
         button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (descriptor);
         // normally, this should be enough. But for some reason some mode buttons remain active,
         //even when they should not. So we change the button state explicitly.
