@@ -45,6 +45,26 @@ namespace AdjustableModPanel {
       }
     }
 
+    // this black magic is needed to get the texture from gpu to cpu
+    private Texture2D DuplicateTexture (Texture2D source) {
+      RenderTexture renderTex = RenderTexture.GetTemporary(
+                source.width,
+                source.height,
+                0,
+                RenderTextureFormat.Default,
+                RenderTextureReadWrite.Linear);
+
+      Graphics.Blit (source, renderTex);
+      RenderTexture previous = RenderTexture.active;
+      RenderTexture.active = renderTex;
+      Texture2D readableText = new Texture2D(source.width, source.height);
+      readableText.ReadPixels (new Rect (0, 0, renderTex.width, renderTex.height), 0, 0, false);
+      readableText.Apply ();
+      RenderTexture.active = previous;
+      RenderTexture.ReleaseTemporary (renderTex);
+      return readableText;
+    }
+
     public void Update () {
       // not the best way to avoid useless updates, but there are no relevant events
       if (modlist.Count == mods && !AdjustableModPanel.Instance.ForceUpdate)
@@ -52,6 +72,11 @@ namespace AdjustableModPanel {
       mods = modlist.Count;
 
       KSP.UI.UIListData<KSP.UI.UIListItem> myButton = null;
+
+      AdjustableModPanel.Instance.StartRecordingMods ();
+
+      System.Collections.Generic.Dictionary<KSP.UI.Screens.ApplicationLauncherButton, uint> cashes = 
+        new System.Collections.Generic.Dictionary<KSP.UI.Screens.ApplicationLauncherButton, uint> ();
 
       foreach (var mod in modlist) {
         var button = mod.listItem.GetComponent<KSP.UI.Screens.ApplicationLauncherButton> ();
@@ -64,20 +89,44 @@ namespace AdjustableModPanel {
         var module = func.Method.Module.Name;
         if (module.EndsWith (".dll"))
           module = module.Substring (0, module.Length - 4);
-        var descriptor = module + "+" + method;
+
+        uint textureHash = 0;
+        unchecked {
+          foreach (var byt in DuplicateTexture (texture).GetRawTextureData ()) {
+            textureHash = textureHash * 8u + byt;
+          }
+        }
+        cashes[button] = textureHash;
 
         KSP.UI.Screens.ApplicationLauncher.AppScenes alwaysOn = KSP.UI.Screens.ApplicationLauncher.AppScenes.NEVER;
 
         if (button.container.Data is KSP.UI.Screens.ApplicationLauncher.AppScenes) {
           alwaysOn = (KSP.UI.Screens.ApplicationLauncher.AppScenes)button.container.Data;
+          button.container.Data = null;
         }
 
-        AdjustableModPanel.Instance.RecordMod (descriptor, button.VisibleInScenes, alwaysOn, texture);
-        button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (descriptor);
+        AdjustableModPanel.Instance.RecordMod (module, method, button.VisibleInScenes, textureHash, alwaysOn, texture);
+      }
+
+      AdjustableModPanel.Instance.EndRecordingMods ();
+
+      foreach (var mod in modlist) {
+        var button = mod.listItem.GetComponent<KSP.UI.Screens.ApplicationLauncherButton> ();
+        if (AdjustableModPanel.Instance.IsAppButton (button)) {
+          myButton = mod;
+        }
+        var texture = (Texture2D) button.sprite.texture;
+        var func = button.onTrue.GetInvocationList ()[1];
+        var method = func.Method.Name;
+        var module = func.Method.Module.Name;
+        if (module.EndsWith (".dll"))
+          module = module.Substring (0, module.Length - 4);
+        button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (module, method, button.VisibleInScenes, cashes[button]);
         // normally, this should be enough. But for some reason some mode buttons remain active,
         //even when they should not. So we change the button state explicitly.
         button.gameObject.SetActive (KSP.UI.Screens.ApplicationLauncher.Instance.ShouldBeVisible (button));
       }
+
       // place on top
       myButton?.listItem.transform.SetAsFirstSibling ();
     }

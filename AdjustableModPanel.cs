@@ -32,9 +32,23 @@ using System.Collections.Generic;
 namespace AdjustableModPanel {
   [KSPAddon (KSPAddon.Startup.MainMenu, true)]
   public class AdjustableModPanel : MonoBehaviour {
-    private Dictionary<string, ApplicationLauncher.AppScenes> modMatrix = new Dictionary<string, ApplicationLauncher.AppScenes> ();
-    private Dictionary<string, ApplicationLauncher.AppScenes> modMatrixAlwaysOn = new Dictionary<string, ApplicationLauncher.AppScenes> ();
-    private Dictionary<string, KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> > modList = new Dictionary<string, KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> > ();
+    private class ModDescriptor {
+      public string module;
+      public string method;
+      public uint textureHash;
+      public bool textureHashNeeded = false;
+      public bool unmaintainable = false;
+
+      public ApplicationLauncher.AppScenes defaultScenes;
+      public ApplicationLauncher.AppScenes requiredScenes;
+      public Texture2D modIcon;
+    }
+
+    private List<ModDescriptor> descriptors = new List<ModDescriptor> ();
+    private List<ModDescriptor> tempDescriptors;
+    private Dictionary <ModDescriptor, ApplicationLauncher.AppScenes> currentScenes = new Dictionary<ModDescriptor, ApplicationLauncher.AppScenes> ();
+    private Dictionary <ModDescriptor, ApplicationLauncher.AppScenes> pendingChanges = new Dictionary<ModDescriptor, ApplicationLauncher.AppScenes> ();
+
     private ApplicationLauncherButton appButton = null;
     private Texture2D appButtonTexture;
     private EventData<GameScenes>.OnEvent updateCallback1 = null;
@@ -56,10 +70,8 @@ namespace AdjustableModPanel {
     #region Main window
 
     private class ToggleParameters : MonoBehaviour {
-      public ApplicationLauncher.AppScenes defaultModScenes;
-      public string currentModKey;
+      public ModDescriptor currentModKey;
       public ApplicationLauncher.AppScenes toggleModScenes;
-      public ApplicationLauncher.AppScenes AlwaysOn = ApplicationLauncher.AppScenes.NEVER;
     }
 
     private void OpenMainWindow () {
@@ -120,8 +132,14 @@ namespace AdjustableModPanel {
       }
       line.transform.SetParent (mainWindow.transform);
 
+      int num = 0;
+      foreach (var mod in descriptors) {
+        if (!mod.unmaintainable && mod.modIcon != null)
+          num++;
+      }
+
       Transform contentTransform = null;
-      if (modList.Count < 11) {
+      if (num < 11) {
         contentTransform = mainWindow.transform;
       } else {
         // scroller
@@ -199,7 +217,9 @@ namespace AdjustableModPanel {
         transform.offsetMax = Vector2.zero;
       }
 
-      foreach (var mod in modList) {
+      foreach (var mod in descriptors) {
+        if (mod.unmaintainable || mod.modIcon == null)
+          continue;
         // mod lines
         line = new GameObject ();
         line.AddComponent<RectTransform> ();
@@ -210,7 +230,7 @@ namespace AdjustableModPanel {
         elem.AddComponent<CanvasRenderer> ();
         elem.AddComponent<RectTransform> ();
         var rimage = elem.AddComponent<UnityEngine.UI.RawImage> ();
-        rimage.texture = mod.Value.Value;
+        rimage.texture = mod.modIcon;
         layout = elem.AddComponent<UnityEngine.UI.LayoutElement> ();
         layout.preferredHeight = 50;
         layout.preferredWidth = 50;
@@ -221,7 +241,7 @@ namespace AdjustableModPanel {
         elem.AddComponent<RectTransform> ();
         layout = elem.AddComponent<UnityEngine.UI.LayoutElement> ();
         var text = elem.AddComponent<TMPro.TextMeshProUGUI> ();
-        text.text = mod.Key.Split ('+')[0];
+        text.text = mod.module;
         text.font = UISkinManager.TMPFont;
         text.fontSize = 14;
         text.color = Color.white;
@@ -273,20 +293,22 @@ namespace AdjustableModPanel {
           image.type = UnityEngine.UI.Image.Type.Sliced;
           // parameters
           var parameters = toggle.AddComponent<ToggleParameters> ();
-          parameters.defaultModScenes = mod.Value.Key;
-          parameters.currentModKey = mod.Key;
+          parameters.currentModKey = mod;
           parameters.toggleModScenes = scene.Key;
-          parameters.AlwaysOn = modMatrixAlwaysOn[mod.Key];
           // checkbox state
-          bool enabled = (mod.Value.Key & scene.Key) != ApplicationLauncher.AppScenes.NEVER;
-          bool visible = (modMatrix[mod.Key] & (scene.Key & (~parameters.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER;
-          togglecomp.interactable = enabled;
-          togglecomp.isOn = enabled & visible;
-          if (!enabled) {
+          bool allowed = (mod.defaultScenes & scene.Key) != ApplicationLauncher.AppScenes.NEVER;
+          ApplicationLauncher.AppScenes curvalue = currentScenes[mod];
+          if (pendingChanges.ContainsKey(mod)) {
+            curvalue = pendingChanges[mod];
+          }
+          bool enabled = (curvalue & (scene.Key & (~mod.requiredScenes))) != ApplicationLauncher.AppScenes.NEVER;
+          togglecomp.interactable = allowed;
+          togglecomp.isOn = allowed & enabled;
+          if (!allowed) {
             togglecomp.GetComponent<UnityEngine.UI.Image> ().color = new Color (0f, 0f, 0f, 0.25f);
           }
           // special case for "always on"
-          if ((parameters.toggleModScenes & (~parameters.AlwaysOn)) == ApplicationLauncher.AppScenes.NEVER) {
+          if ((parameters.toggleModScenes & (~mod.requiredScenes)) == ApplicationLauncher.AppScenes.NEVER) {
             image.color = Color.gray;
             togglecomp.isOn = true;
             // just keep it always on
@@ -298,14 +320,17 @@ namespace AdjustableModPanel {
           } else {
             // checkbox callback
             togglecomp.onValueChanged.AddListener ((value) => {
-              if (value != ((modMatrix[parameters.currentModKey] & (parameters.toggleModScenes & (~parameters.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER)) {
+              ApplicationLauncher.AppScenes currentvalue = currentScenes[mod];
+              if (pendingChanges.ContainsKey (mod)) {
+                currentvalue = pendingChanges[mod];
+              }
+              if (value != ((currentvalue & (parameters.toggleModScenes & (~mod.requiredScenes))) != ApplicationLauncher.AppScenes.NEVER)) {
                 if (value) {
-                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] | (parameters.toggleModScenes & parameters.defaultModScenes);
+                  pendingChanges[mod] = currentvalue | (parameters.toggleModScenes & mod.defaultScenes);
                 } else {
-                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] & (~parameters.toggleModScenes);
-                  modMatrix[parameters.currentModKey] = modMatrix[parameters.currentModKey] | parameters.AlwaysOn;
+                  pendingChanges[mod] = (currentvalue & (~parameters.toggleModScenes)) | mod.requiredScenes;
                 }
-                Debug.Log ("[Adjustable Mod Panel] New value for " + parameters.currentModKey + ": " + modMatrix[parameters.currentModKey]);
+                Debug.Log ("[Adjustable Mod Panel] New value for " + parameters.currentModKey.module + ": " + pendingChanges[mod]);
                 forceUpdateCount += 1;
                 UpdateToggles ();
               }
@@ -346,12 +371,16 @@ namespace AdjustableModPanel {
     private void UpdateToggles () {
       foreach (var toggle in mainWindow.GetComponentsInChildren<UnityEngine.UI.Toggle> (true)) {
         var pars = toggle.GetComponent<ToggleParameters> ();
-        if (pars.toggleModScenes == pars.AlwaysOn) {
+        if ((pars.toggleModScenes & (~pars.currentModKey.requiredScenes)) == ApplicationLauncher.AppScenes.NEVER) {
           toggle.isOn = true;
           continue;
         }
-        if (toggle.isOn != ((modMatrix[pars.currentModKey] & (pars.toggleModScenes & (~pars.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER)) {
-          toggle.isOn = ((modMatrix[pars.currentModKey] & (pars.toggleModScenes & (~pars.AlwaysOn))) != ApplicationLauncher.AppScenes.NEVER);
+        ApplicationLauncher.AppScenes currentvalue = currentScenes[pars.currentModKey];
+        if (pendingChanges.ContainsKey (pars.currentModKey)) {
+          currentvalue = pendingChanges[pars.currentModKey];
+        }
+        if (toggle.isOn != ((currentvalue & (pars.toggleModScenes & (~pars.currentModKey.requiredScenes))) != ApplicationLauncher.AppScenes.NEVER)) {
+          toggle.isOn = ((currentvalue & (pars.toggleModScenes & (~pars.currentModKey.requiredScenes))) != ApplicationLauncher.AppScenes.NEVER);
         }
       }
     }
@@ -493,10 +522,28 @@ namespace AdjustableModPanel {
       // not needed, really
     }
 
-    internal ApplicationLauncher.AppScenes GetModScenes (string descriptor) {
-      if (modMatrix.ContainsKey (descriptor))
-        return modMatrix[descriptor];
-      return ApplicationLauncher.AppScenes.NEVER;
+    internal ApplicationLauncher.AppScenes GetModScenes (string module, string method, ApplicationLauncher.AppScenes scenes, uint hash) {
+      foreach (var mod in descriptors) {
+        if (mod.module == module && mod.method == method) {
+          if (!mod.textureHashNeeded || (mod.textureHash == hash)) {
+            if (mod.unmaintainable) {
+              return scenes;
+            }
+            // lets check that the scenes didn't change while we were frolicking about
+            if (scenes != currentScenes[mod] && scenes != mod.defaultScenes) {
+              Debug.Log ("[Adjustable Mod Panel] WARNING: mod " + module + "+" + method + " changed visibility. This is unexpected, ignoring it.");
+              return scenes;
+            }
+            if (pendingChanges.ContainsKey (mod)) {
+              currentScenes[mod] = pendingChanges[mod];
+              pendingChanges.Remove (mod);
+            }
+            return currentScenes[mod];
+          }
+        }
+      }
+      Debug.Log ("[Adjustable Mod Panel] WARNING: mod " + module + "+" + method + " was not found.");
+      return scenes;
     }
 
     internal bool IsAppButton (ApplicationLauncherButton appButton) {
@@ -516,8 +563,26 @@ namespace AdjustableModPanel {
       }
     }
 
-    internal void RecordMod (string descriptor, ApplicationLauncher.AppScenes visibleInScenes, ApplicationLauncher.AppScenes alwaysOn,Texture2D texture) {
-      if (!modList.ContainsKey (descriptor)) {
+    internal void StartRecordingMods () {
+      tempDescriptors = new List<ModDescriptor> ();
+    }
+
+    internal void RecordMod (string module, string method, ApplicationLauncher.AppScenes scenes, uint hash, ApplicationLauncher.AppScenes alwaysOn,Texture2D texture) {
+      if (tempDescriptors == null) {
+        Debug.Log ("[Adjustable Mod Panel] WARNING: mod is recorded in unexpected place.");
+        return;
+      }
+      tempDescriptors.Add (new ModDescriptor () {
+        module = module,
+        method = method,
+        textureHash = hash,
+        textureHashNeeded = false,
+        unmaintainable = false,
+        defaultScenes = scenes,
+        requiredScenes = alwaysOn,
+        modIcon = texture
+      });
+      /*if (!modList.ContainsKey (descriptor)) {
         Debug.Log ("[Adjustable Mod Panel] Recorded a new mod: " + descriptor.Split ('+')[0]);
         modList[descriptor] = new KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> (visibleInScenes, texture);
       } else {
@@ -530,7 +595,114 @@ namespace AdjustableModPanel {
         if (alwaysOn != ApplicationLauncher.AppScenes.NEVER)
           Debug.Log ("[Adjustable Mod Panel]  Mod " + descriptor.Split('+')[0] + " requests to be unswitchable in scenes: " + alwaysOn);
         modMatrixAlwaysOn[descriptor] = alwaysOn;
+      }*/
+    }
+
+    internal void EndRecordingMods () {
+      if (tempDescriptors == null) {
+        Debug.Log ("[Adjustable Mod Panel] WARNING: mod is recorded in unexpected place.");
+        return;
       }
+      if (tempDescriptors.Count == 0) {
+        tempDescriptors = null;
+        return;
+      }
+
+      var easy = new List<ModDescriptor> ();
+      var hard = new List<ModDescriptor> ();
+      var unmaintainable = new List<ModDescriptor> ();
+      for (int i = 0; i < tempDescriptors.Count; i++) {
+        var a = tempDescriptors[i];
+        for (int j = i + 1; j < tempDescriptors.Count; j++) {
+          var b = tempDescriptors[j];
+          if (a.module == b.module && a.method == b.method) {
+            a.textureHashNeeded = b.textureHashNeeded = true;
+            if (a.textureHash == b.textureHash) {
+              Debug.Log ("[Adjustable Mod Panel] WARNING: " + a.module + " defines several app buttons that are exactly the same. We will ignore them from now on.");
+              a.unmaintainable = true;
+            }
+          }
+        }
+        if (a.textureHashNeeded == false) {
+          easy.Add (a);
+        } else if (a.unmaintainable == false) {
+          hard.Add (a);
+        } else {
+          unmaintainable.Add (a);
+        }
+      }
+      foreach (var mod in easy) {
+        bool add = true;
+        foreach (var modref in descriptors) {
+          if (mod.module == modref.module && mod.method == modref.method) {
+            if (modref.textureHashNeeded == false) {
+              // we assume this is the mod, and end with it
+              add = false;
+              FillModIfNeeded (modref, mod);
+              break;
+            }
+            if (modref.textureHashNeeded == true) {
+              // there used to be several mods with this signature
+              // throw it into the "hard" pile
+              mod.textureHashNeeded = true;
+              hard.Add (mod);
+              add = false;
+              break;
+            }
+          }
+        }
+        if (add) {
+          //new mod
+          Debug.Log ("[Adjustable Mod Panel] Record a new mod: module " + mod.module + ", method " + mod.method);
+          descriptors.Add (mod);
+          currentScenes[mod] = mod.defaultScenes;
+        }
+      }
+      foreach (var mod in hard) {
+        bool add = true;
+        foreach (var modref in descriptors) {
+          if (mod.module == modref.module && mod.method == modref.method) {
+            // whatever was before, now we consider the texture as a part of a descriptor
+            modref.textureHashNeeded = true;
+            if (mod.textureHash == modref.textureHash) {
+              // mod found
+              FillModIfNeeded (modref, mod);
+              add = false;
+              break;
+            }
+          }
+        }
+        if (add) {
+          //new mod
+          Debug.Log ("[Adjustable Mod Panel] Record a new mod: module " + mod.module + ", method " + mod.method + ", hash " + mod.textureHash);
+          Debug.Log ("[Adjustable Mod Panel] WARNING: Since there are several mods with such signature, the icon would be used as a descriptor");
+          descriptors.Add (mod);
+          currentScenes[mod] = mod.defaultScenes;
+        }
+      }
+      foreach (var mod in unmaintainable) {
+        bool add = true;
+        foreach (var modref in descriptors) {
+          if (mod.module == modref.module && mod.method == modref.method && mod.textureHash == modref.textureHash) {
+            modref.unmaintainable = true;
+            add = false;
+          }
+        }
+        if (add) {
+          descriptors.Add (mod);
+        }
+      }
+      tempDescriptors = null;
+    }
+
+    void FillModIfNeeded (ModDescriptor to, ModDescriptor from) {
+      if (to.modIcon != null)
+        return;
+      Debug.Log ("[Adjustable Mod Panel] Encountered a known mod: module " + to.module + ", method " + to.method + 
+        (to.textureHashNeeded? (", hash " + to.textureHash.ToString()) : ""));
+      to.modIcon = from.modIcon;
+      to.requiredScenes = from.requiredScenes;
+      to.defaultScenes = from.defaultScenes;
     }
 
     #region Config
@@ -538,13 +710,22 @@ namespace AdjustableModPanel {
     internal void SaveConfig () {
       Debug.Log ("[Adjustable Mod Panel] Saving settings.");
       KSP.IO.PluginConfiguration config = KSP.IO.PluginConfiguration.CreateForType<AdjustableModPanel> (null);
-      config["count"] = modMatrix.Count;
       int i = 1;
-      foreach (var mod in modMatrix) {
-        config["mod" + i.ToString ()] = mod.Key;
-        config["scenes" + i.ToString ()] = (int)mod.Value;
+      foreach (var mod in descriptors) {
+        if (mod.unmaintainable)
+          continue;
+        // artifact from an old config
+        if (mod.textureHashNeeded && mod.textureHash == 0u)
+          continue;
+        config["module" + i.ToString ()] = mod.module;
+        config["method" + i.ToString ()] = mod.method;
+        config["hashNeeded" + i.ToString ()] = mod.textureHashNeeded;
+        if (mod.textureHashNeeded)
+          config["hash" + i.ToString ()] = (long)mod.textureHash;
+        config["scenes" + i.ToString ()] = (int)currentScenes[mod];
         i++;
       }
+      config["count"] = i-1;
       config.save ();
     }
 
@@ -555,9 +736,35 @@ namespace AdjustableModPanel {
       try {
         int count = config.GetValue<int> ("count");
         for (int i = 1; i <= count; i++) {
-          string key = config.GetValue<string> ("mod" + i.ToString ());
+          string key = config.GetValue<string> ("mod" + i.ToString (), "");
+          ModDescriptor desc = null;
+          if (key != "") {
+            var vals = key.Split('+');
+            desc = new ModDescriptor () {
+              module = vals[0],
+              method = vals[1],
+              textureHash = 0,
+              textureHashNeeded = false,
+              unmaintainable = false,
+              modIcon = null,
+              defaultScenes = ApplicationLauncher.AppScenes.NEVER,
+              requiredScenes = ApplicationLauncher.AppScenes.NEVER
+            };
+          } else {
+            desc = new ModDescriptor () {
+              module = config.GetValue<string> ("module" + i.ToString ()),
+              method = config.GetValue<string> ("method" + i.ToString ()),
+              textureHashNeeded = config.GetValue<bool> ("hashNeeded" + i.ToString ()),
+              textureHash = (uint)config.GetValue<long> ("hash" + i.ToString (), 0u),
+              unmaintainable = false,
+              modIcon = null,
+              defaultScenes = ApplicationLauncher.AppScenes.NEVER,
+              requiredScenes = ApplicationLauncher.AppScenes.NEVER
+            };
+          }
           ApplicationLauncher.AppScenes value = (ApplicationLauncher.AppScenes)config.GetValue<int> ("scenes" + i.ToString ());
-          modMatrix.Add (key, value);
+          descriptors.Add (desc);
+          currentScenes[desc] = value;
         }
       } catch (System.Exception e) {
         Debug.Log ("[Adjustable Mod Panel] There was an error reading config: " + e);
