@@ -25,6 +25,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 using System;
+using System.Linq;
 using UnityEngine;
 using KSP.UI.Screens;
 using System.Collections.Generic;
@@ -66,6 +67,52 @@ namespace AdjustableModPanel {
     };
 
     static internal AdjustableModPanel Instance { get; private set; } = null;
+
+    #region ToolbarControl
+
+    private bool ToolbarControllerAvailable = true;
+    private Type ToolbarControllerType = null;
+    private System.Reflection.MethodInfo ToolbarControllerMethod = null;
+
+    public bool IsButtonToolbarController (ApplicationLauncherButton button, out string name, out string id) {
+      if (!ToolbarControllerAvailable) {
+        name = null;
+        id = null;
+        return false;
+      }
+      if (ToolbarControllerType == null) {
+        ToolbarControllerType = AssemblyLoader.loadedAssemblies
+          .Select (a => a.assembly.GetExportedTypes ())
+          .SelectMany (t => t)
+          .FirstOrDefault (t => t.FullName == "ToolbarControl_NS.ToolbarControl");
+        if (ToolbarControllerType == null) {
+          Debug.Log ("[Adjustable Mod Panel] INFO: ToolbarControl mod not found");
+          ToolbarControllerAvailable = false;
+          name = null;
+          id = null;
+          return false;
+        }
+      }
+      if (ToolbarControllerMethod == null) {
+        ToolbarControllerMethod = ToolbarControllerType.GetMethod ("IsStockButtonManaged", 
+          System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        if (ToolbarControllerMethod == null) {
+          Debug.Log ("[Adjustable Mod Panel] INFO: ToolbarControl mod found, but the method is absent");
+          ToolbarControllerAvailable = false;
+          name = null;
+          id = null;
+          return false;
+        }
+        Debug.Log ("[Adjustable Mod Panel] INFO: Found ToolbarControl mod, will check mods from now on");
+      }
+      System.Object[] parameters = new System.Object[]{button, null, null};
+      bool rez = (bool)ToolbarControllerMethod.Invoke (null, parameters);
+      name = (string)parameters[1];
+      id = (string)parameters[2];
+      return rez;
+    }
+
+    #endregion
 
     #region Main window
 
@@ -582,20 +629,6 @@ namespace AdjustableModPanel {
         requiredScenes = alwaysOn,
         modIcon = texture
       });
-      /*if (!modList.ContainsKey (descriptor)) {
-        Debug.Log ("[Adjustable Mod Panel] Recorded a new mod: " + descriptor.Split ('+')[0]);
-        modList[descriptor] = new KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> (visibleInScenes, texture);
-      } else {
-        // update the value in case the visibility was expanded by the mod
-        modList[descriptor] = new KeyValuePair<ApplicationLauncher.AppScenes, Texture2D> ((visibleInScenes | modList[descriptor].Key), texture);
-      }
-      if (!modMatrix.ContainsKey (descriptor))
-        modMatrix[descriptor] = visibleInScenes;
-      if (!modMatrixAlwaysOn.ContainsKey (descriptor)) {
-        if (alwaysOn != ApplicationLauncher.AppScenes.NEVER)
-          Debug.Log ("[Adjustable Mod Panel]  Mod " + descriptor.Split('+')[0] + " requests to be unswitchable in scenes: " + alwaysOn);
-        modMatrixAlwaysOn[descriptor] = alwaysOn;
-      }*/
     }
 
     internal void EndRecordingMods () {

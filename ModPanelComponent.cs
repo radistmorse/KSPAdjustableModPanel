@@ -90,6 +90,12 @@ namespace AdjustableModPanel {
         if (module.EndsWith (".dll"))
           module = module.Substring (0, module.Length - 4);
 
+        if (AdjustableModPanel.Instance.IsButtonToolbarController (button, out string name, out string id)) {
+          // button created by ToolbarControl needs special treatment
+          module = name;
+          method = id;
+        }
+
         uint textureHash = 0;
         unchecked {
           foreach (var byt in DuplicateTexture (texture).GetRawTextureData ()) {
@@ -121,6 +127,13 @@ namespace AdjustableModPanel {
         var module = func.Method.Module.Name;
         if (module.EndsWith (".dll"))
           module = module.Substring (0, module.Length - 4);
+
+        if (AdjustableModPanel.Instance.IsButtonToolbarController (button, out string name, out string id)) {
+          // button created by ToolbarControl needs special treatment
+          module = name;
+          method = id;
+        }
+
         button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (module, method, button.VisibleInScenes, cashes[button]);
         // normally, this should be enough. But for some reason some mode buttons remain active,
         //even when they should not. So we change the button state explicitly.
