@@ -38,7 +38,7 @@ namespace AdjustableModPanel {
       public string method;
       public uint textureHash;
       public bool textureHashNeeded = false;
-      public bool unmaintainable = false;
+      public bool unmanageable = false;
 
       public ApplicationLauncher.AppScenes defaultScenes;
       public ApplicationLauncher.AppScenes requiredScenes;
@@ -181,7 +181,7 @@ namespace AdjustableModPanel {
 
       int num = 0;
       foreach (var mod in descriptors) {
-        if (!mod.unmaintainable && mod.modIcon != null)
+        if (!mod.unmanageable && mod.defaultScenes != ApplicationLauncher.AppScenes.NEVER && mod.modIcon != null)
           num++;
       }
 
@@ -265,7 +265,7 @@ namespace AdjustableModPanel {
       }
 
       foreach (var mod in descriptors) {
-        if (mod.unmaintainable || mod.modIcon == null)
+        if (mod.unmanageable || mod.modIcon == null || mod.defaultScenes == ApplicationLauncher.AppScenes.NEVER)
           continue;
         // mod lines
         line = new GameObject ();
@@ -569,28 +569,29 @@ namespace AdjustableModPanel {
       // not needed, really
     }
 
-    internal ApplicationLauncher.AppScenes GetModScenes (string module, string method, ApplicationLauncher.AppScenes scenes, uint hash) {
+    internal ApplicationLauncher.AppScenes GetModScenes (string module, string method, ApplicationLauncher.AppScenes currentScenes, uint hash) {
       foreach (var mod in descriptors) {
         if (mod.module == module && mod.method == method) {
           if (!mod.textureHashNeeded || (mod.textureHash == hash)) {
-            if (mod.unmaintainable) {
-              return scenes;
+            if (mod.unmanageable) {
+              return currentScenes;
             }
             // lets check that the scenes didn't change while we were frolicking about
-            if (scenes != currentScenes[mod] && scenes != mod.defaultScenes) {
+            if (currentScenes != this.currentScenes[mod] && currentScenes != mod.defaultScenes) {
               Debug.Log ("[Adjustable Mod Panel] WARNING: mod " + module + "+" + method + " changed visibility. This is unexpected, ignoring it.");
-              return scenes;
+              mod.unmanageable = true;
+              return currentScenes;
             }
             if (pendingChanges.ContainsKey (mod)) {
-              currentScenes[mod] = pendingChanges[mod];
+              this.currentScenes[mod] = pendingChanges[mod];
               pendingChanges.Remove (mod);
             }
-            return currentScenes[mod];
+            return this.currentScenes[mod];
           }
         }
       }
       Debug.Log ("[Adjustable Mod Panel] WARNING: mod " + module + "+" + method + " was not found.");
-      return scenes;
+      return currentScenes;
     }
 
     internal bool IsAppButton (ApplicationLauncherButton appButton) {
@@ -624,7 +625,7 @@ namespace AdjustableModPanel {
         method = method,
         textureHash = hash,
         textureHashNeeded = false,
-        unmaintainable = false,
+        unmanageable = false,
         defaultScenes = scenes,
         requiredScenes = alwaysOn,
         modIcon = texture
@@ -652,13 +653,13 @@ namespace AdjustableModPanel {
             a.textureHashNeeded = b.textureHashNeeded = true;
             if (a.textureHash == b.textureHash) {
               Debug.Log ("[Adjustable Mod Panel] WARNING: " + a.module + " defines several app buttons that are exactly the same. We will ignore them from now on.");
-              a.unmaintainable = true;
+              a.unmanageable = true;
             }
           }
         }
         if (a.textureHashNeeded == false) {
           easy.Add (a);
-        } else if (a.unmaintainable == false) {
+        } else if (a.unmanageable == false) {
           hard.Add (a);
         } else {
           unmaintainable.Add (a);
@@ -717,7 +718,7 @@ namespace AdjustableModPanel {
         bool add = true;
         foreach (var modref in descriptors) {
           if (mod.module == modref.module && mod.method == modref.method && mod.textureHash == modref.textureHash) {
-            modref.unmaintainable = true;
+            modref.unmanageable = true;
             add = false;
           }
         }
@@ -745,7 +746,7 @@ namespace AdjustableModPanel {
       KSP.IO.PluginConfiguration config = KSP.IO.PluginConfiguration.CreateForType<AdjustableModPanel> (null);
       int i = 1;
       foreach (var mod in descriptors) {
-        if (mod.unmaintainable)
+        if (mod.unmanageable)
           continue;
         // artifact from an old config
         if (mod.textureHashNeeded && mod.textureHash == 0u)
@@ -778,7 +779,7 @@ namespace AdjustableModPanel {
               method = vals[1],
               textureHash = 0,
               textureHashNeeded = false,
-              unmaintainable = false,
+              unmanageable = false,
               modIcon = null,
               defaultScenes = ApplicationLauncher.AppScenes.NEVER,
               requiredScenes = ApplicationLauncher.AppScenes.NEVER
@@ -789,7 +790,7 @@ namespace AdjustableModPanel {
               method = config.GetValue<string> ("method" + i.ToString ()),
               textureHashNeeded = config.GetValue<bool> ("hashNeeded" + i.ToString ()),
               textureHash = (uint)config.GetValue<long> ("hash" + i.ToString (), 0u),
-              unmaintainable = false,
+              unmanageable = false,
               modIcon = null,
               defaultScenes = ApplicationLauncher.AppScenes.NEVER,
               requiredScenes = ApplicationLauncher.AppScenes.NEVER
