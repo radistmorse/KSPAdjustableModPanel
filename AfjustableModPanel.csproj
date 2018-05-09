@@ -47,6 +47,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ModPanelIcons.cs" />
     <Compile Include="ModPanelComponent.cs" />
     <Compile Include="AdjustableModPanel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

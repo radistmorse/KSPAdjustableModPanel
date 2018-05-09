@@ -137,10 +137,16 @@ namespace AdjustableModPanel {
         button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (module, method, button.VisibleInScenes, cashes[button]);
         // normally, this should be enough. But for some reason some mode buttons remain active,
         //even when they should not. So we change the button state explicitly.
-        button.gameObject.SetActive (KSP.UI.Screens.ApplicationLauncher.Instance.ShouldBeVisible (button));
+        bool visible = KSP.UI.Screens.ApplicationLauncher.Instance.ShouldBeVisible (button);
+        button.gameObject.SetActive (visible);
+
+        if (visible && AdjustableModPanel.Instance.GetModPinned (module, method, button.VisibleInScenes, cashes[button])) {
+          // move to the top of the mod panel
+          mod.listItem.transform.SetAsFirstSibling ();
+        }
       }
 
-      // place on top
+      // our own button should always be the first
       myButton?.listItem.transform.SetAsFirstSibling ();
     }
   }
