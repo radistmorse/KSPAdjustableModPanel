@@ -137,7 +137,7 @@ namespace AdjustableModPanel {
         button.VisibleInScenes = AdjustableModPanel.Instance.GetModScenes (module, method, button.VisibleInScenes, cashes[button]);
         // normally, this should be enough. But for some reason some mode buttons remain active,
         //even when they should not. So we change the button state explicitly.
-        bool visible = KSP.UI.Screens.ApplicationLauncher.Instance.ShouldBeVisible (button);
+        bool visible = KSP.UI.Screens.ApplicationLauncher.Instance.DetermineVisibility (button);
         button.gameObject.SetActive (visible);
 
         if (visible && AdjustableModPanel.Instance.GetModPinned (module, method, button.VisibleInScenes, cashes[button])) {
