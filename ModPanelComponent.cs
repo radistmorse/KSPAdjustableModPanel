@@ -127,6 +127,11 @@ namespace AdjustableModPanel {
           myButton = mod;
         }
         var texture = (Texture2D) button.sprite.texture;
+
+        // button without a texture - very unnatural. Better ignore.
+        if (texture == null)
+          continue;
+
         var func = button.onTrue.GetInvocationList ()[1];
         var method = func.Method.Name;
         var module = func.Method.Module.Name;
