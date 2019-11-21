@@ -24,6 +24,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+using System.Linq;
 using UnityEngine;
 
 namespace AdjustableModPanel {
@@ -89,7 +90,14 @@ namespace AdjustableModPanel {
         if (texture == null)
           continue;
 
-        var func = button.onTrue.GetInvocationList ()[1];
+        // try any non-null callback in order
+        var func = new Callback[] { button.onTrue, button.onHover, button.onLeftClick, button.onEnable, button.onFalse, button.onHoverOut, button.onDisable }
+          .Select(cb => cb.GetInvocationList().Skip(1).FirstOrDefault()).Where(m => m != null).FirstOrDefault();
+
+        // button with no callbacks. Ignore.
+        if (func == null)
+          continue;
+
         var method = func.Method.Name;
         var module = func.Method.Module.Name;
         if (module.EndsWith (".dll"))
