@@ -140,8 +140,14 @@ namespace AdjustableModPanel {
         if (texture == null)
           continue;
 
-        var func = button.onTrue.GetInvocationList ()[1];
-        var method = func.Method.Name;
+        // try any non-null callback in order
+        var func = new Callback[] { button.onTrue, button.onHover, button.onLeftClick, button.onEnable, button.onFalse, button.onHoverOut, button.onDisable }
+          .Select(cb => cb.GetInvocationList().Skip(1).FirstOrDefault()).Where(m => m != null).FirstOrDefault(); var method = func.Method.Name;
+
+        // button with no callbacks. Ignore.
+        if (func == null)
+          continue;
+
         var module = func.Method.Module.Name;
         if (module.EndsWith (".dll"))
           module = module.Substring (0, module.Length - 4);
